@@ -18,6 +18,11 @@ from .config import (
 )
 from .data import load_csvs, deep_copy_team_hitters, deep_copy_team_pitchers, get_trade_candidates, LoadedData
 from .game import GameSimulator
+from .viewmodels import (
+    build_live_game_payload as _vm_build_live_game_payload,
+    build_season_summary_payload as _vm_build_season_summary_payload,
+    build_app_payload as _vm_build_app_payload,
+)
 
 
 @dataclass
@@ -173,28 +178,21 @@ def simulate_next_day(state: SeasonState):
         key = make_game_key(g["날짜"], g["Away"], g["Home"])
         if key in state.completed_game_keys:
             continue
-        if hanwha_row is not None and g["Away"] == hanwha_row["Away"] and g["Home"] == hanwha_row["Home"]:
-            temp = GameSimulator(
-                away_team=g["Away"], home_team=g["Home"],
-                away_roster=state.team_hitters[g["Away"]], home_roster=state.team_hitters[g["Home"]],
-                away_staff=state.team_pitchers[g["Away"]], home_staff=state.team_pitchers[g["Home"]],
-                away_starter_role=get_rotation_role(state, g["Away"]),
-                home_starter_role=get_rotation_role(state, g["Home"]),
-                seed=make_seed(g["날짜"], g["Away"], g["Home"]),
-            )
-            temp.play_to_end()
-            _commit_game_result(state, g["날짜"], g["Away"], g["Home"], temp.result())
-        else:
-            temp = GameSimulator(
-                away_team=g["Away"], home_team=g["Home"],
-                away_roster=state.team_hitters[g["Away"]], home_roster=state.team_hitters[g["Home"]],
-                away_staff=state.team_pitchers[g["Away"]], home_staff=state.team_pitchers[g["Home"]],
-                away_starter_role=get_rotation_role(state, g["Away"]),
-                home_starter_role=get_rotation_role(state, g["Home"]),
-                seed=make_seed(g["날짜"], g["Away"], g["Home"]),
-            )
-            temp.play_to_end()
-            _commit_game_result(state, g["날짜"], g["Away"], g["Home"], temp.result())
+
+        temp = GameSimulator(
+            away_team=g["Away"],
+            home_team=g["Home"],
+            away_roster=state.team_hitters[g["Away"]],
+            home_roster=state.team_hitters[g["Home"]],
+            away_staff=state.team_pitchers[g["Away"]],
+            home_staff=state.team_pitchers[g["Home"]],
+            away_starter_role=get_rotation_role(state, g["Away"]),
+            home_starter_role=get_rotation_role(state, g["Home"]),
+            seed=make_seed(g["날짜"], g["Away"], g["Home"]),
+        )
+        temp.play_to_end()
+        _commit_game_result(state, g["날짜"], g["Away"], g["Home"], temp.result())
+
     state.live_game = None
     state.live_game_meta = None
     _advance_date_if_done(state)
@@ -208,9 +206,12 @@ def _simulate_other_games_today(state: SeasonState):
         if key in state.completed_game_keys:
             continue
         temp = GameSimulator(
-            away_team=g["Away"], home_team=g["Home"],
-            away_roster=state.team_hitters[g["Away"]], home_roster=state.team_hitters[g["Home"]],
-            away_staff=state.team_pitchers[g["Away"]], home_staff=state.team_pitchers[g["Home"]],
+            away_team=g["Away"],
+            home_team=g["Home"],
+            away_roster=state.team_hitters[g["Away"]],
+            home_roster=state.team_hitters[g["Home"]],
+            away_staff=state.team_pitchers[g["Away"]],
+            home_staff=state.team_pitchers[g["Home"]],
             away_starter_role=get_rotation_role(state, g["Away"]),
             home_starter_role=get_rotation_role(state, g["Home"]),
             seed=make_seed(g["날짜"], g["Away"], g["Home"]),
@@ -223,7 +224,13 @@ def _commit_live_game(state: SeasonState):
     if state.live_game is None or state.live_game_meta is None:
         return
     result = state.live_game.result()
-    _commit_game_result(state, state.live_game_meta["date"], state.live_game_meta["away"], state.live_game_meta["home"], result)
+    _commit_game_result(
+        state,
+        state.live_game_meta["date"],
+        state.live_game_meta["away"],
+        state.live_game_meta["home"],
+        result,
+    )
     state.live_game = None
     state.live_game_meta = None
     _refresh_aggregates(state)
@@ -308,8 +315,18 @@ def build_batter_leaders(game_results: List[dict]) -> pd.DataFrame:
             key = (event["team"], event["name"])
             if key not in rows:
                 rows[key] = {
-                    "팀": event["team"], "선수명": event["name"], "타석": 0, "타수": 0, "안타": 0, "홈런": 0,
-                    "1루타": 0, "2루타": 0, "3루타": 0, "볼넷": 0, "희생번트성공": 0, "희생플라이성공": 0,
+                    "팀": event["team"],
+                    "선수명": event["name"],
+                    "타석": 0,
+                    "타수": 0,
+                    "안타": 0,
+                    "홈런": 0,
+                    "1루타": 0,
+                    "2루타": 0,
+                    "3루타": 0,
+                    "볼넷": 0,
+                    "희생번트성공": 0,
+                    "희생플라이성공": 0,
                 }
             rows[key]["타석"] += event.get("PA", 0)
             rows[key]["타수"] += event.get("AB", 0)
@@ -331,7 +348,9 @@ def build_batter_leaders(game_results: List[dict]) -> pd.DataFrame:
     df["출루율"] = (df["안타"] + df["볼넷"]) / df["타석"].clip(lower=1)
     df["장타율"] = (df["1루타"] + 2 * df["2루타"] + 3 * df["3루타"] + 4 * df["홈런"]) / df["타수"].clip(lower=1)
     df["OPS"] = df["출루율"] + df["장타율"]
-    return df[["팀", "선수명", "타석", "타수", "안타", "홈런", "타율", "출루율", "장타율", "OPS"]].sort_values(
+    return df[
+        ["팀", "선수명", "타석", "타수", "안타", "홈런", "타율", "출루율", "장타율", "OPS"]
+    ].sort_values(
         ["OPS", "홈런", "안타"], ascending=[False, False, False]
     ).reset_index(drop=True)
 
@@ -343,7 +362,13 @@ def build_pitcher_leaders(game_results: List[dict]) -> pd.DataFrame:
             key = (pb["team"], pb["name"])
             if key not in rows:
                 rows[key] = {
-                    "팀": pb["team"], "선수명": pb["name"], "아웃": 0, "볼넷": 0, "삼진": 0, "실점": 0, "피안타": 0,
+                    "팀": pb["team"],
+                    "선수명": pb["name"],
+                    "아웃": 0,
+                    "볼넷": 0,
+                    "삼진": 0,
+                    "실점": 0,
+                    "피안타": 0,
                 }
             rows[key]["아웃"] += pb["outs"]
             rows[key]["볼넷"] += pb["walks"]
@@ -354,9 +379,11 @@ def build_pitcher_leaders(game_results: List[dict]) -> pd.DataFrame:
     if df.empty:
         return df
     df["이닝"] = df["아웃"] / 3.0
-    df["ERA"] = df["실점"] * 9 / df["이닝"].clip(lower=1/3)
-    df["WHIP"] = (df["피안타"] + df["볼넷"]) / df["이닝"].clip(lower=1/3)
-    return df[["팀", "선수명", "이닝", "볼넷", "삼진", "ERA", "WHIP"]].sort_values(
+    df["ERA"] = df["실점"] * 9 / df["이닝"].clip(lower=1 / 3)
+    df["WHIP"] = (df["피안타"] + df["볼넷"]) / df["이닝"].clip(lower=1 / 3)
+    return df[
+        ["팀", "선수명", "이닝", "볼넷", "삼진", "ERA", "WHIP"]
+    ].sort_values(
         ["ERA", "WHIP", "이닝"], ascending=[True, True, False]
     ).reset_index(drop=True)
 
@@ -412,6 +439,7 @@ def execute_trade(state: SeasonState, opponent_team: str, target_name: str, offe
     diff = abs(offer_wraa - target_wraa)
     chance = max(0.10, min(0.90, 0.75 - diff / 50.0))
     seed = int(hashlib.md5((current_date(state) + target_name + "".join(sorted(offered_names))).encode()).hexdigest()[:8], 16)
+
     import random
     rng = random.Random(seed)
     success = rng.random() < chance
@@ -420,12 +448,16 @@ def execute_trade(state: SeasonState, opponent_team: str, target_name: str, offe
         return False, f"트레이드 실패 (성공확률 {chance:.1%})"
 
     for bucket_name, p in offers:
-        state.team_hitters[USER_TEAM][bucket_name] = [x for x in state.team_hitters[USER_TEAM][bucket_name] if x["name"] != p["name"]]
+        state.team_hitters[USER_TEAM][bucket_name] = [
+            x for x in state.team_hitters[USER_TEAM][bucket_name] if x["name"] != p["name"]
+        ]
         p_copy = copy.deepcopy(p)
         p_copy["order"] = 0
         state.team_hitters[opponent_team]["bench"].append(p_copy)
 
-    state.team_hitters[opponent_team][target_bucket] = [x for x in state.team_hitters[opponent_team][target_bucket] if x["name"] != target["name"]]
+    state.team_hitters[opponent_team][target_bucket] = [
+        x for x in state.team_hitters[opponent_team][target_bucket] if x["name"] != target["name"]
+    ]
     target_copy = copy.deepcopy(target)
     target_copy["order"] = 0
     state.team_hitters[USER_TEAM]["bench"].append(target_copy)
@@ -503,7 +535,11 @@ def get_eligible_manual_pitchers(state: SeasonState) -> List[str]:
     month = state.month_key()
     eligible = []
     for role in CHASE_ROLES:
-        if role in defense.staff and defense.current_pitcher_role != role and defense.manual_chase_changes_used < MANUAL_CHASE_CHANGES_PER_GAME:
+        if (
+            role in defense.staff
+            and defense.current_pitcher_role != role
+            and defense.manual_chase_changes_used < MANUAL_CHASE_CHANGES_PER_GAME
+        ):
             eligible.append(role)
     for role in SETUP_ROLES:
         used = state.manual_setup_monthly_usage.get((month, role), 0)
@@ -533,3 +569,20 @@ def live_apply_manual_pitcher(state: SeasonState, role: str) -> tuple[bool, str]
         state.manual_setup_monthly_usage[(month, role)] = used + 1
     ok = game.apply_manual_pitcher_change(USER_TEAM, role)
     return ok, "투수 교체 예약" if ok else "투수 교체 실패"
+
+
+# =========================================================
+# 2단계: UI / React 공용 payload 스키마
+# =========================================================
+def build_live_game_payload(state: SeasonState) -> dict:
+    eligible_roles = get_eligible_manual_pitchers(state)
+    return _vm_build_live_game_payload(state, eligible_manual_roles=eligible_roles)
+
+
+def build_season_summary_payload(state: SeasonState) -> dict:
+    return _vm_build_season_summary_payload(state)
+
+
+def build_app_payload(state: SeasonState) -> dict:
+    eligible_roles = get_eligible_manual_pitchers(state)
+    return _vm_build_app_payload(state, eligible_manual_roles=eligible_roles)
