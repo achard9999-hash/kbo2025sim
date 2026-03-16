@@ -17,6 +17,7 @@ from .config import (
     MANUAL_SETUP_CHANGES_PER_MONTH,
 )
 from .data import load_csvs, deep_copy_team_hitters, deep_copy_team_pitchers, get_trade_candidates, LoadedData
+from .data import make_fallback_pitcher
 from .game import GameSimulator
 from .viewmodels import (
     build_live_game_payload as _vm_build_live_game_payload,
@@ -103,7 +104,7 @@ def selected_game_started(state: SeasonState) -> bool:
 
 
 def get_rotation_role(state: SeasonState, team: str) -> str:
-    staff = state.team_pitchers[team]
+    staff = state.team_pitchers.get(team, {})
     idx = state.team_games_played[team] % 5
     preferred = STARTER_ROLES[idx]
     if preferred in staff:
@@ -111,7 +112,8 @@ def get_rotation_role(state: SeasonState, team: str) -> str:
     for role in STARTER_ROLES:
         if role in staff:
             return role
-    return next(iter(staff.keys()))
+    # staff가 비어있으면 기본 선발1로 강제 (폴백 투수는 start_selected_game에서 채움)
+    return next(iter(staff.keys())) if staff else STARTER_ROLES[0]
 
 
 def start_selected_game(state: SeasonState) -> bool:
@@ -124,13 +126,31 @@ def start_selected_game(state: SeasonState) -> bool:
         return True
     if key in state.completed_game_keys:
         return False
+
+    # 안전장치: 특정 팀 투수진/로스터가 비어도 크래시 대신 폴백으로 진행
+    if away not in state.team_hitters:
+        state._last_error = f"원정팀 타자 로스터 없음: {away}"
+        return False
+    if home not in state.team_hitters:
+        state._last_error = f"홈팀 타자 로스터 없음: {home}"
+        return False
+
+    away_staff = state.team_pitchers.get(away, {})
+    home_staff = state.team_pitchers.get(home, {})
+    if not away_staff:
+        away_staff = {STARTER_ROLES[0]: make_fallback_pitcher(away, "대체투수", STARTER_ROLES[0], 0)}
+        state.team_pitchers[away] = away_staff
+    if not home_staff:
+        home_staff = {STARTER_ROLES[0]: make_fallback_pitcher(home, "대체투수", STARTER_ROLES[0], 0)}
+        state.team_pitchers[home] = home_staff
+
     state.live_game = GameSimulator(
         away_team=away,
         home_team=home,
         away_roster=state.team_hitters[away],
         home_roster=state.team_hitters[home],
-        away_staff=state.team_pitchers[away],
-        home_staff=state.team_pitchers[home],
+        away_staff=away_staff,
+        home_staff=home_staff,
         away_starter_role=get_rotation_role(state, away),
         home_starter_role=get_rotation_role(state, home),
         seed=make_seed(date, away, home),
@@ -463,6 +483,12 @@ def execute_trade(state: SeasonState, opponent_team: str, target_name: str, offe
     state.team_hitters[USER_TEAM]["bench"].append(target_copy)
     _normalize_hanwha_lineup(state)
     return True, f"트레이드 성공: {target_name} 영입 (성공확률 {chance:.1%})"
+
+
+def apply_trade_action(state: SeasonState, opponent_team: str, target_name: str, offered_names: List[str]) -> tuple[bool, str]:
+    ok, msg = execute_trade(state, opponent_team, target_name, offered_names)
+    state._last_trade_result = {"ok": ok, "message": msg}
+    return ok, msg
 
 
 def _normalize_hanwha_lineup(state: SeasonState):

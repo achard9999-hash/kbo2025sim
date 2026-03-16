@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [react()],
   base: "./",
   build: {
-    outDir: "dist",
-    emptyOutDir: true
-  }
+    // Streamlit component loader expects: kbo_sim/frontend/dist
+    outDir: "../kbo_sim/frontend/dist",
+    emptyOutDir: true,
+  },
 });

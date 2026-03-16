@@ -1,7 +1,7 @@
 import streamlit as st
 from kbo_sim.season import (
     initialize_season_state, start_selected_game, simulate_live_pa, simulate_live_half, simulate_selected_game, simulate_next_day,
-    live_force_bunt, live_apply_pinch_hitter, live_apply_pinch_runner, live_apply_manual_pitcher
+    live_force_bunt, live_apply_pinch_hitter, live_apply_pinch_runner, live_apply_manual_pitcher, apply_trade_action
 )
 from kbo_sim.ui import render_app
 
@@ -14,19 +14,34 @@ season = st.session_state["season"]
 action = render_app(season)
 
 if action == "start_or_resume":
-    start_selected_game(season)
+    try:
+        start_selected_game(season)
+    except Exception as e:
+        season._last_error = f"start_or_resume 오류: {e}"
     st.rerun()
 elif action == "live_pa":
-    simulate_live_pa(season)
+    try:
+        simulate_live_pa(season)
+    except Exception as e:
+        season._last_error = f"live_pa 오류: {e}"
     st.rerun()
 elif action == "live_half":
-    simulate_live_half(season)
+    try:
+        simulate_live_half(season)
+    except Exception as e:
+        season._last_error = f"live_half 오류: {e}"
     st.rerun()
 elif action == "simulate_selected":
-    simulate_selected_game(season)
+    try:
+        simulate_selected_game(season)
+    except Exception as e:
+        season._last_error = f"simulate_selected 오류: {e}"
     st.rerun()
 elif action == "simulate_day":
-    simulate_next_day(season)
+    try:
+        simulate_next_day(season)
+    except Exception as e:
+        season._last_error = f"simulate_day 오류: {e}"
     st.rerun()
 elif action == "force_bunt":
     live_force_bunt(season)
@@ -46,4 +61,21 @@ elif action == "apply_manual_pitcher":
     role = getattr(season, "_last_manual_role", "")
     if role:
         live_apply_manual_pitcher(season, role)
+    st.rerun()
+elif action == "execute_trade":
+    opp = getattr(season, "_last_trade_opp", "")
+    target = getattr(season, "_last_trade_target", "")
+    offered = getattr(season, "_last_trade_offered", []) or []
+    if opp and target:
+        try:
+            apply_trade_action(season, opp, target, offered)
+        except Exception as e:
+            season._last_error = f"execute_trade 오류: {e}"
+    st.rerun()
+elif action == "set_hanwha_game_idx":
+    try:
+        idx = int(getattr(season, "_last_hanwha_game_idx", 0) or 0)
+        season.selected_hanwha_game_idx = max(0, idx)
+    except Exception as e:
+        season._last_error = f"set_hanwha_game_idx 오류: {e}"
     st.rerun()

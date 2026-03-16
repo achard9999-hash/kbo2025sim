@@ -274,8 +274,9 @@ def _render_top_banner(season_summary: dict):
     st.markdown(
         f"""
         <div class="ss-page-bg">
-            <div class="ss-hero">
-                <div class="ss-hero-top">
+            <div class="ss-hero" style="position:relative; overflow:hidden;">
+                <img src="image/메인화면.png" alt="메인 배경" style="width:100%; height:auto; display:block; filter:brightness(0.9);" />
+                <div class="ss-hero-top" style="position:absolute; inset:0; background:linear-gradient(90deg, rgba(15,23,42,0.90) 0%, rgba(15,23,42,0.55) 45%, rgba(15,23,42,0.10) 100%);">
                     <div>
                         <div class="ss-hero-title">효진부터 시작되는 한화의 KS 우승!</div>
                         <div class="ss-hero-sub">한화 수동 운영 + 타 팀 자동 시뮬 + 날짜별 순위/리더보드</div>
@@ -376,6 +377,16 @@ def _translate_component_action(season, comp_action):
     if action_type == "apply_manual_pitcher":
         season._last_manual_role = payload.get("role", "")
         return "apply_manual_pitcher"
+
+    if action_type == "execute_trade":
+        season._last_trade_opp = payload.get("opponent_team", "")
+        season._last_trade_target = payload.get("target_name", "")
+        season._last_trade_offered = payload.get("offered_names", []) or []
+        return "execute_trade"
+
+    if action_type == "set_hanwha_game_idx":
+        season._last_hanwha_game_idx = int(payload.get("idx", 0) or 0)
+        return "set_hanwha_game_idx"
 
     if action_type in {
         "start_or_resume",
@@ -696,32 +707,40 @@ def _render_leaderboard_tab(season):
 def render_app(season) -> str | None:
     _inject_global_css()
 
+    # New UI direction: React-first.
+    app_payload = build_app_payload(season)
+    if component_is_ready():
+        # React가 전체 홈/내비게이션을 그리므로, 상단 배너는 중복으로 띄우지 않는다.
+        comp_action = render_hanwha_dashboard_component(
+            app_payload=app_payload,
+            key="hanwha_app_component",
+        )
+        translated = _translate_component_action(season, comp_action)
+        if translated is not None:
+            return translated
+        st.caption("React 컴포넌트 연결됨")
+        return None
+
+    # React가 없는 경우에만 기존 Streamlit UI를 사용
     season_summary = build_season_summary_payload(season)
     _render_top_banner(season_summary)
     _render_summary_cards(season_summary)
 
+    st.caption("React 빌드가 없어서 Streamlit fallback UI로 표시 중")
     tabs = st.tabs(["오늘 일정", "실시간 경기", "한화 라인업", "트레이드", "순위", "리더보드"])
-
     action = None
-
     with tabs[0]:
         action = _render_schedule_tab(season)
-
     with tabs[1]:
         tab_action = _render_live_game_tab(season)
         if tab_action is not None:
             action = tab_action
-
     with tabs[2]:
         _render_lineup_tab(season)
-
     with tabs[3]:
         _render_trade_tab(season)
-
     with tabs[4]:
         _render_standings_tab(season)
-
     with tabs[5]:
         _render_leaderboard_tab(season)
-
     return action
