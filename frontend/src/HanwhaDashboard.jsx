@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Streamlit } from "streamlit-component-lib";
 import { motion } from "framer-motion";
 
@@ -133,7 +133,6 @@ export default function HanwhaDashboard(props) {
   const currentPitcher = game?.current_pitcher || {};
 
   const activeSide = game?.half === "top" ? "away" : "home";
-
   const hasLiveGame = !!live.has_live_game && !!game;
 
   useAutoHeight([
@@ -156,33 +155,15 @@ export default function HanwhaDashboard(props) {
 
   return (
     <div className="ss-shell">
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.22 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
         <div className="ss-scoreboard">
           <div className="ss-score-top">
-            <TeamLine
-              side="AWAY"
-              name={fmtText(game.away_team)}
-              score={fmtText(game.score?.away, "0")}
-              active={activeSide === "away"}
-            />
+            <TeamLine side="AWAY" name={fmtText(game.away_team)} score={fmtText(game.score?.away, "0")} active={activeSide === "away"} />
             <div className="ss-center-score-wrap">
-              <div className="ss-center-score">
-                {fmtText(game.score?.away, "0")} : {fmtText(game.score?.home, "0")}
-              </div>
-              <div className="ss-center-sub">
-                {fmtText(summary.current_date)} · {fmtText(game.inning, "1")}회 {fmtText(game.half_kor)}
-              </div>
+              <div className="ss-center-score">{fmtText(game.score?.away, "0")} : {fmtText(game.score?.home, "0")}</div>
+              <div className="ss-center-sub">{fmtText(summary.current_date)} · {fmtText(game.inning, "1")}회 {fmtText(game.half_kor)}</div>
             </div>
-            <TeamLine
-              side="HOME"
-              name={fmtText(game.home_team)}
-              score={fmtText(game.score?.home, "0")}
-              active={activeSide === "home"}
-            />
+            <TeamLine side="HOME" name={fmtText(game.home_team)} score={fmtText(game.score?.home, "0")} active={activeSide === "home"} />
           </div>
 
           <div className="ss-chip-row">
@@ -240,32 +221,19 @@ export default function HanwhaDashboard(props) {
           <InfoRow label="공격 팀" value={fmtText(game.offense_team)} />
           <InfoRow label="수비 팀" value={fmtText(game.defense_team)} />
           <InfoRow label="다음 타자" value={fmtText(currentBatter.name)} />
-          <InfoRow
-            label="현재 투수"
-            value={`${fmtText(currentPitcher.name)}${currentPitcher.role ? ` (${currentPitcher.role})` : ""}`}
-          />
+          <InfoRow label="현재 투수" value={`${fmtText(currentPitcher.name)}${currentPitcher.role ? ` (${currentPitcher.role})` : ""}`} />
           <InfoRow label="주자 상황" value={fmtText(game.bases_text)} />
 
           <div className="ss-action-grid">
-            <button className="ss-primary-btn" onClick={() => emitAction("live_pa")}>
-              1타석 진행
-            </button>
-            <button className="ss-secondary-btn" onClick={() => emitAction("live_half")}>
-              반이닝 진행
-            </button>
-            <button className="ss-secondary-btn" onClick={() => emitAction("simulate_selected")}>
-              경기 끝까지 진행
-            </button>
+            <button className="ss-primary-btn" onClick={() => emitAction("live_pa")}>1타석 진행</button>
+            <button className="ss-secondary-btn" onClick={() => emitAction("live_half")}>반이닝 진행</button>
+            <button className="ss-secondary-btn" onClick={() => emitAction("simulate_selected")}>경기 끝까지 진행</button>
           </div>
         </Card>
 
         <Card title="감독 개입">
           <div className="ss-form-block">
-            <button
-              className="ss-primary-btn"
-              onClick={() => emitAction("force_bunt")}
-              disabled={!manager.can_force_bunt}
-            >
+            <button className="ss-primary-btn" onClick={() => emitAction("force_bunt")} disabled={!manager.can_force_bunt}>
               다음 타석 강제 번트
             </button>
           </div>
@@ -275,16 +243,10 @@ export default function HanwhaDashboard(props) {
             <select className="ss-select" value={phName} onChange={(e) => setPhName(e.target.value)}>
               <option value="">대타 선택</option>
               {(manager.bench_for_ph || []).map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.name}
-                </option>
+                <option key={p.name} value={p.name}>{p.name}</option>
               ))}
             </select>
-            <button
-              className="ss-secondary-btn"
-              onClick={() => emitAction("apply_ph", { name: phName })}
-              disabled={!phName}
-            >
+            <button className="ss-secondary-btn" onClick={() => emitAction("apply_ph", { name: phName })} disabled={!phName}>
               대타 적용
             </button>
           </div>
@@ -294,59 +256,35 @@ export default function HanwhaDashboard(props) {
             <select className="ss-select" value={prName} onChange={(e) => setPrName(e.target.value)}>
               <option value="">대주자 선택</option>
               {(manager.bench_for_pr || []).map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.name}
-                </option>
+                <option key={p.name} value={p.name}>{p.name}</option>
               ))}
             </select>
 
-            <select
-              className="ss-select"
-              value={prBase}
-              onChange={(e) => setPrBase(Number(e.target.value))}
-            >
+            <select className="ss-select" value={prBase} onChange={(e) => setPrBase(Number(e.target.value))}>
               {(manager.pr_base_choices?.length ? manager.pr_base_choices : [1]).map((b) => (
-                <option key={b} value={b}>
-                  {b}루
-                </option>
+                <option key={b} value={b}>{b}루</option>
               ))}
             </select>
 
-            <button
-              className="ss-secondary-btn"
-              onClick={() => emitAction("apply_pr", { name: prName, base_number: prBase })}
-              disabled={!prName}
-            >
+            <button className="ss-secondary-btn" onClick={() => emitAction("apply_pr", { name: prName, base_number: prBase })} disabled={!prName}>
               대주자 적용
             </button>
           </div>
 
           <div className="ss-form-block">
             <div className="ss-form-label">강제 투수 교체</div>
-            <select
-              className="ss-select"
-              value={manualRole}
-              onChange={(e) => setManualRole(e.target.value)}
-            >
+            <select className="ss-select" value={manualRole} onChange={(e) => setManualRole(e.target.value)}>
               <option value="">역할 선택</option>
               {(manager.eligible_manual_pitchers || []).map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
+                <option key={role} value={role}>{role}</option>
               ))}
             </select>
-            <button
-              className="ss-secondary-btn"
-              onClick={() => emitAction("apply_manual_pitcher", { role: manualRole })}
-              disabled={!manualRole}
-            >
+            <button className="ss-secondary-btn" onClick={() => emitAction("apply_manual_pitcher", { role: manualRole })} disabled={!manualRole}>
               강제 투수 교체 적용
             </button>
           </div>
 
-          <div className="ss-note">
-            현재 액션은 Python 시뮬 엔진으로 돌아가고, 이 패널은 React UI 레이어만 담당합니다.
-          </div>
+          <div className="ss-note">현재 액션은 Python 시뮬 엔진으로 돌아가고, 이 패널은 React UI 레이어만 담당합니다.</div>
         </Card>
       </div>
 

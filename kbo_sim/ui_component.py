@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 _COMPONENT_NAME = "hanwha_dashboard"
 _DEV_URL = os.getenv("HANWHA_COMPONENT_URL", "http://localhost:5173")
 _DEV_MODE = os.getenv("HANWHA_COMPONENT_DEV", "0") == "1"
-_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+_DIST_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
 
 _component_func = None
 
