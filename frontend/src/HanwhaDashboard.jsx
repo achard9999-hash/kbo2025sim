@@ -27,6 +27,25 @@ function useAutoHeight(deps) {
     const t = window.setTimeout(() => {
       Streamlit.setFrameHeight(document.documentElement.scrollHeight);
     }, 100);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7345/ingest/951d57bc-e6c4-4ece-8da0-0254437e8c89', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '0290f3',
+      },
+      body: JSON.stringify({
+        sessionId: '0290f3',
+        runId: 'pre-fix',
+        hypothesisId: 'H2',
+        location: 'HanwhaDashboard.jsx:useAutoHeight',
+        message: 'setFrameHeight_called',
+        data: {},
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion agent log
     return () => window.clearTimeout(t);
   }, deps);
 }

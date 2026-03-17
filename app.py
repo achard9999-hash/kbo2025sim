@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 from kbo_sim.season import (
     initialize_season_state, start_selected_game, simulate_live_pa, simulate_live_half, simulate_selected_game, simulate_next_day,
     live_force_bunt, live_apply_pinch_hitter, live_apply_pinch_runner, live_apply_manual_pitcher, apply_trade_action
@@ -12,6 +13,22 @@ if "season" not in st.session_state:
 
 season = st.session_state["season"]
 action = render_app(season)
+
+# region agent log
+try:
+    with open("debug-0290f3.log", "a", encoding="utf-8") as _f:
+        _f.write(json.dumps({
+            "sessionId": "0290f3",
+            "runId": "pre-fix",
+            "hypothesisId": "H2",
+            "location": "app.py:action_dispatch",
+            "message": "dispatch_action",
+            "data": {"action": action},
+            "timestamp": __import__("time").time(),
+        }) + "\n")
+except Exception:
+    pass
+# endregion agent log
 
 if action == "start_or_resume":
     try:

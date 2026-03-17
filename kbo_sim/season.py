@@ -144,6 +144,23 @@ def start_selected_game(state: SeasonState) -> bool:
         home_staff = {STARTER_ROLES[0]: make_fallback_pitcher(home, "대체투수", STARTER_ROLES[0], 0)}
         state.team_pitchers[home] = home_staff
 
+    # region agent log
+    try:
+        import json as _json, time as _time
+        with open("debug-0290f3.log", "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "0290f3",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "season.py:start_selected_game",
+                "message": "start_game_params",
+                "data": {"date": str(date), "away": away, "home": home},
+                "timestamp": _time.time(),
+            }) + "\n")
+    except Exception:
+        pass
+    # endregion agent log
+
     state.live_game = GameSimulator(
         away_team=away,
         home_team=home,
@@ -184,7 +201,26 @@ def simulate_selected_game(state: SeasonState):
         start_selected_game(state)
     if state.live_game is None:
         return
+    # region agent log
+    _t0 = __import__("time").time()
+    # endregion agent log
     state.live_game.play_to_end()
+    # region agent log
+    try:
+        import json as _json, time as _time
+        with open("debug-0290f3.log", "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "0290f3",
+                "runId": "pre-fix",
+                "hypothesisId": "H1",
+                "location": "season.py:simulate_selected_game",
+                "message": "play_to_end_duration",
+                "data": {"duration_sec": _time.time() - _t0},
+                "timestamp": _time.time(),
+            }) + "\n")
+    except Exception:
+        pass
+    # endregion agent log
     _commit_live_game(state)
     _simulate_other_games_today(state)
     _advance_date_if_done(state)
