@@ -210,3 +210,15 @@
 {"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773817768.3090684}
 {"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773817783.658119}
 {"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773817783.7167199}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": null}, "timestamp": 1773819623.4971218}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "start_or_resume"}, "timestamp": 1773819636.072123}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H1", "location": "season.py:start_selected_game", "message": "start_game_params", "data": {"date": "2025-03-22", "away": "\ud55c\ud654", "home": "KT"}, "timestamp": 1773819636.0750456}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "start_or_resume"}, "timestamp": 1773819636.1230152}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773819708.9476464}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773819708.9861493}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": null}, "timestamp": 1773819957.5814128}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "start_or_resume"}, "timestamp": 1773819961.7616844}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H1", "location": "season.py:start_selected_game", "message": "start_game_params", "data": {"date": "2025-03-22", "away": "\ud55c\ud654", "home": "KT"}, "timestamp": 1773819961.7649245}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "start_or_resume"}, "timestamp": 1773819961.8126786}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773819971.27992}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773819971.3177087}

@@ -15,6 +15,13 @@ if "_last_processed_action" not in st.session_state:
     st.session_state["_last_processed_action"] = None
 
 season = st.session_state["season"]
+
+# 구 세션 호환: 런타임 필드 보정
+if not hasattr(season, "starter_stamina"):
+    season.starter_stamina = {}
+if not hasattr(season, "trade_attempts_monthly"):
+    season.trade_attempts_monthly = {}
+
 action = render_app(season)
 
 # region agent log
@@ -137,11 +144,21 @@ elif action == "update_pitcher_rotation":
     try:
         new_order = getattr(season, "_last_pitcher_order", [])
         if new_order:
-            # 새로운 로테이션으로 투수 업데이트
-            from kbo_sim.config import USER_TEAM
+            from kbo_sim.config import USER_TEAM, STARTER_ROLES
+            import copy
+
             pitchers = season.team_pitchers.get(USER_TEAM, {})
-            # role 순서대로 재배치 (간단히 유지)
-            # 나중에 더 복잡한 로직 추가 가능
+            role_to_pitcher = {role: copy.deepcopy(pitchers.get(role)) for role in STARTER_ROLES}
+
+            # UI 순서(new_order)의 n번째 투수를 선발 n번 슬롯으로 배치
+            for idx, target_role in enumerate(STARTER_ROLES):
+                if idx < len(new_order):
+                    source_role = new_order[idx]
+                    src_pitcher = role_to_pitcher.get(source_role)
+                    if src_pitcher is not None:
+                        pitchers[target_role] = src_pitcher
+
+            season.team_pitchers[USER_TEAM] = pitchers
     except Exception as e:
         season._last_error = f"update_pitcher_rotation 오류: {e}"
     st.session_state["_last_processed_action"] = action

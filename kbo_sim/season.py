@@ -46,6 +46,8 @@ class SeasonState:
     live_game_meta: Optional[dict] = None
 
     manual_setup_monthly_usage: Dict[Tuple[str, str], int] = field(default_factory=dict)
+    starter_stamina: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    trade_attempts_monthly: Dict[str, int] = field(default_factory=dict)
 
     def month_key(self) -> str:
         return current_date(self)[:7]
@@ -59,8 +61,24 @@ def initialize_season_state(data_dir=".") -> SeasonState:
         team_pitchers=deep_copy_team_pitchers(data.team_pitchers),
         team_games_played={team: 0 for team in TEAMS},
     )
+    _ensure_runtime_fields(state)
     _refresh_aggregates(state)
     return state
+
+
+def _ensure_runtime_fields(state: SeasonState):
+    if not hasattr(state, "starter_stamina") or not isinstance(getattr(state, "starter_stamina", None), dict):
+        state.starter_stamina = {}
+    if not hasattr(state, "trade_attempts_monthly") or not isinstance(getattr(state, "trade_attempts_monthly", None), dict):
+        state.trade_attempts_monthly = {}
+
+    for team in TEAMS:
+        staff = state.team_pitchers.get(team, {})
+        if team not in state.starter_stamina:
+            state.starter_stamina[team] = {}
+        for role in STARTER_ROLES:
+            if role in staff and role not in state.starter_stamina[team]:
+                state.starter_stamina[team][role] = 100
 
 
 def current_date(state: SeasonState) -> str:
@@ -104,19 +122,33 @@ def selected_game_started(state: SeasonState) -> bool:
 
 
 def get_rotation_role(state: SeasonState, team: str) -> str:
+    _ensure_runtime_fields(state)
     staff = state.team_pitchers.get(team, {})
+    stamina = state.starter_stamina.get(team, {})
     idx = state.team_games_played[team] % 5
     preferred = STARTER_ROLES[idx]
+
+    # 100% 체력 선발만 출전 가능
+    if preferred in staff and int(stamina.get(preferred, 100) or 0) >= 100:
+        return preferred
+
+    for role in STARTER_ROLES:
+        if role in staff and int(stamina.get(role, 100) or 0) >= 100:
+            return role
+
+    # 전원이 100% 미만일 경우 기존 로테이션 선발 사용 (UI에 체력 경고 표시 가능)
     if preferred in staff:
         return preferred
     for role in STARTER_ROLES:
         if role in staff:
             return role
+
     # staff가 비어있으면 기본 선발1로 강제 (폴백 투수는 start_selected_game에서 채움)
     return next(iter(staff.keys())) if staff else STARTER_ROLES[0]
 
 
 def start_selected_game(state: SeasonState) -> bool:
+    _ensure_runtime_fields(state)
     row = current_hanwha_game_row(state)
     if row is None:
         return False
@@ -161,6 +193,9 @@ def start_selected_game(state: SeasonState) -> bool:
         pass
     # endregion agent log
 
+    away_starter_role = get_rotation_role(state, away)
+    home_starter_role = get_rotation_role(state, home)
+
     state.live_game = GameSimulator(
         away_team=away,
         home_team=home,
@@ -168,11 +203,22 @@ def start_selected_game(state: SeasonState) -> bool:
         home_roster=state.team_hitters[home],
         away_staff=away_staff,
         home_staff=home_staff,
-        away_starter_role=get_rotation_role(state, away),
-        home_starter_role=get_rotation_role(state, home),
+        away_starter_role=away_starter_role,
+        home_starter_role=home_starter_role,
         seed=make_seed(date, away, home),
     )
-    state.live_game_meta = {"date": date, "away": away, "home": home, "key": key}
+    state.live_game_meta = {
+        "date": date,
+        "away": away,
+        "home": home,
+        "key": key,
+        "away_starter_role": away_starter_role,
+        "home_starter_role": home_starter_role,
+    }
+
+    # 선발 출전 시 체력 0 처리
+    state.starter_stamina.setdefault(away, {})[away_starter_role] = 0
+    state.starter_stamina.setdefault(home, {})[home_starter_role] = 0
     return True
 
 
@@ -323,6 +369,7 @@ def _commit_game_result(state: SeasonState, date: str, away: str, home: str, res
 
 
 def _advance_date_if_done(state: SeasonState):
+    _ensure_runtime_fields(state)
     while state.current_date_idx < len(state.data.all_dates):
         day = current_day_schedule(state)
         keys = {make_game_key(r["날짜"], r["Away"], r["Home"]) for _, r in day.iterrows()}
@@ -330,6 +377,11 @@ def _advance_date_if_done(state: SeasonState):
             if state.current_date_idx < len(state.data.all_dates) - 1:
                 state.current_date_idx += 1
                 state.selected_hanwha_game_idx = 0
+
+                # 날짜가 하루 지날 때 선발 체력 25% 회복 (최대 100)
+                for team, role_map in state.starter_stamina.items():
+                    for role, stamina in list(role_map.items()):
+                        role_map[role] = min(100, int(stamina or 0) + 25)
             else:
                 break
         else:
@@ -522,8 +574,24 @@ def execute_trade(state: SeasonState, opponent_team: str, target_name: str, offe
 
 
 def apply_trade_action(state: SeasonState, opponent_team: str, target_name: str, offered_names: List[str]) -> tuple[bool, str]:
+    _ensure_runtime_fields(state)
+    month = state.month_key()
+    used = int(state.trade_attempts_monthly.get(month, 0) or 0)
+
+    # 월 1회 트레이드 시도 제한 (성공/실패 무관)
+    if used >= 1:
+        msg = f"{month} 트레이드는 이미 1회 사용했습니다. 다음 달에 다시 시도하세요."
+        state._last_trade_result = {"ok": False, "message": msg, "month": month, "remaining": 0}
+        return False, msg
+
+    state.trade_attempts_monthly[month] = used + 1
     ok, msg = execute_trade(state, opponent_team, target_name, offered_names)
-    state._last_trade_result = {"ok": ok, "message": msg}
+    state._last_trade_result = {
+        "ok": ok,
+        "message": msg,
+        "month": month,
+        "remaining": max(0, 1 - state.trade_attempts_monthly.get(month, 0)),
+    }
     return ok, msg
 
 

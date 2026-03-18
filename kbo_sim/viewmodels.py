@@ -339,12 +339,94 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
 
     starters = []
     bench = []
+    schedule_detail = {}
+    projected_hanwha_starter_role = None
     try:
         starters = sorted(state.team_hitters.get(USER_TEAM, {}).get("starters", []), key=lambda x: x.get("order", 0))
         bench = list(state.team_hitters.get(USER_TEAM, {}).get("bench", []))
+
+        # 오늘 일정 상세: 한화 vs 상대 상세 정보
+        if len(hanwha_games_rows) > 0:
+            selected_idx = _safe_int(getattr(state, "selected_hanwha_game_idx", 0), 0)
+            selected_idx = min(max(selected_idx, 0), len(hanwha_games_rows) - 1)
+            selected_game = hanwha_games_rows[selected_idx]
+
+            away_team = str(selected_game.get("Away", ""))
+            home_team = str(selected_game.get("Home", ""))
+            opponent_team = home_team if away_team == USER_TEAM else away_team
+
+            opponent_lineup = sorted(
+                state.team_hitters.get(opponent_team, {}).get("starters", []),
+                key=lambda x: x.get("order", 0),
+            )
+
+            from .config import STARTER_ROLES
+
+            def _pick_projected_starter_role(team: str):
+                staff = state.team_pitchers.get(team, {})
+                if not staff:
+                    return None
+                games = _safe_int(getattr(state, "team_games_played", {}).get(team, 0), 0)
+                preferred = STARTER_ROLES[games % 5]
+                stamina_map = getattr(state, "starter_stamina", {}).get(team, {})
+
+                if preferred in staff and _safe_int(stamina_map.get(preferred, 100), 100) >= 100:
+                    return preferred
+                for role in STARTER_ROLES:
+                    if role in staff and _safe_int(stamina_map.get(role, 100), 100) >= 100:
+                        return role
+                if preferred in staff:
+                    return preferred
+                for role in STARTER_ROLES:
+                    if role in staff:
+                        return role
+                return next(iter(staff.keys())) if staff else None
+
+            projected_hanwha_starter_role = _pick_projected_starter_role(USER_TEAM)
+            projected_opp_starter_role = _pick_projected_starter_role(opponent_team)
+
+            hanwha_starter = state.team_pitchers.get(USER_TEAM, {}).get(projected_hanwha_starter_role or "", {})
+            opp_starter = state.team_pitchers.get(opponent_team, {}).get(projected_opp_starter_role or "", {})
+
+            hanwha_stamina = _safe_int(
+                getattr(state, "starter_stamina", {}).get(USER_TEAM, {}).get(projected_hanwha_starter_role or "", 100),
+                100,
+            )
+            opp_stamina = _safe_int(
+                getattr(state, "starter_stamina", {}).get(opponent_team, {}).get(projected_opp_starter_role or "", 100),
+                100,
+            )
+
+            schedule_detail = {
+                "selected_game": {
+                    "date": str(selected_game.get("날짜", "")),
+                    "away": away_team,
+                    "home": home_team,
+                    "opponent": opponent_team,
+                    "hanwha_is_home": home_team == USER_TEAM,
+                },
+                "hanwha_lineup": [serialize_player_brief(p) for p in starters],
+                "opponent_lineup": [serialize_player_brief(p) for p in opponent_lineup],
+                "hanwha_starter": {
+                    "name": hanwha_starter.get("name", "정보 없음"),
+                    "role": projected_hanwha_starter_role or "선발",
+                    "era": _safe_float(hanwha_starter.get("era", 0.0)),
+                    "whip": _safe_float(hanwha_starter.get("whip", 0.0)),
+                    "stamina": hanwha_stamina,
+                },
+                "opponent_starter": {
+                    "name": opp_starter.get("name", "정보 없음"),
+                    "role": projected_opp_starter_role or "선발",
+                    "era": _safe_float(opp_starter.get("era", 0.0)),
+                    "whip": _safe_float(opp_starter.get("whip", 0.0)),
+                    "stamina": opp_stamina,
+                },
+            }
     except Exception:
         starters = []
         bench = []
+        schedule_detail = {}
+        projected_hanwha_starter_role = None
 
     # 투수 정보 추가
     starting_pitchers = []
@@ -565,6 +647,7 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
             "hanwha_games": {
                 "selected_idx": _safe_int(getattr(state, "selected_hanwha_game_idx", 0), 0),
                 "rows": hanwha_games_rows,
+                "detail": schedule_detail,
             },
             "hanwha_lineup": {
                 "starters": [serialize_player_brief(p) for p in starters],
@@ -576,6 +659,18 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
                         "era": _safe_float(p.get("era", 0.0) if isinstance(p, dict) else 0.0),
                         "whip": _safe_float(p.get("whip", 0.0) if isinstance(p, dict) else 0.0),
                         "k_rate": _safe_float(p.get("k_rate", 0.0) if isinstance(p, dict) else 0.0),
+                        "stamina": _safe_int(
+                            getattr(state, "starter_stamina", {}).get(USER_TEAM, {}).get(
+                                p.get("role", "") if isinstance(p, dict) else "",
+                                100,
+                            ),
+                            100,
+                        ),
+                        "next_game_starter": bool(
+                            projected_hanwha_starter_role and (p.get("role", "") == projected_hanwha_starter_role)
+                            if isinstance(p, dict)
+                            else False
+                        ),
                     }
                     for p in starting_pitchers
                 ],
@@ -595,6 +690,11 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
                 "markets": trade_markets,
                 "offer_pool": hanwha_offer_pool,
                 "last_result": getattr(state, "_last_trade_result", None),
+                "monthly_limit": 1,
+                "monthly_used": _safe_int(getattr(state, "trade_attempts_monthly", {}).get(state.month_key(), 0), 0)
+                if hasattr(state, "month_key")
+                else 0,
+                "month": state.month_key() if hasattr(state, "month_key") else None,
             },
             "standings": standings_rows,
             "leaders": {

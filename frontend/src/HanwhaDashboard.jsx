@@ -244,6 +244,10 @@ function TradeScreen({ trade, onBack }) {
   const markets = trade?.markets || {};
   const offerPool = trade?.offer_pool || [];
   const last = trade?.last_result || null;
+  const month = trade?.month;
+  const monthlyLimit = Number(trade?.monthly_limit || 1);
+  const monthlyUsed = Number(trade?.monthly_used || 0);
+  const monthlyRemaining = Math.max(0, monthlyLimit - monthlyUsed);
 
   const [opp, setOpp] = useState(opponents[0] || "");
   const [target, setTarget] = useState("");
@@ -266,6 +270,10 @@ function TradeScreen({ trade, onBack }) {
           {last.ok ? "성공" : "실패"} · {last.message}
         </div>
       ) : null}
+
+      <div className="ss-note" style={{ marginBottom: 14 }}>
+        트레이드 월간 제한 · {fmtText(month, "-")} / 사용 {monthlyUsed}회 / 잔여 {monthlyRemaining}회
+      </div>
 
       <div className="ss-two-col">
         <Card title="트레이드 제안">
@@ -314,10 +322,10 @@ function TradeScreen({ trade, onBack }) {
           <button
             className="ss-primary-btn"
             onClick={() => emitAction("execute_trade", { opponent_team: opp, target_name: target, offered_names: offered })}
-            disabled={!opp || !target || offered.length === 0}
+            disabled={!opp || !target || offered.length === 0 || monthlyRemaining <= 0}
             type="button"
           >
-            트레이드 제안
+            {monthlyRemaining <= 0 ? "이번 달 트레이드 소진" : "트레이드 제안"}
           </button>
         </Card>
 
@@ -353,6 +361,15 @@ export default function HanwhaDashboard(props) {
   const [prBase, setPrBase] = useState(1);
   const [manualRole, setManualRole] = useState("");
 
+  // 라인업 드래그 상태 (Hook은 컴포넌트 최상단에만 선언)
+  const [draggedStarter, setDraggedStarter] = useState(null);
+  const [draggedPitcher, setDraggedPitcher] = useState(null);
+  const [startersOrder, setStartersOrder] = useState([]);
+  const [pitchersOrder, setPitchersOrder] = useState([]);
+
+  const lineupStartersSource = screens?.hanwha_lineup?.starters || [];
+  const lineupPitchersSource = screens?.hanwha_lineup?.starting_pitchers || [];
+
   useEffect(() => {
     if (manager.pr_base_choices?.length) {
       setPrBase(manager.pr_base_choices[0]);
@@ -360,6 +377,15 @@ export default function HanwhaDashboard(props) {
       setPrBase(1);
     }
   }, [manager.pr_base_choices]);
+
+  // 서버 payload 변경 시 드래그용 로컬 상태 동기화
+  useEffect(() => {
+    setStartersOrder(lineupStartersSource);
+  }, [lineupStartersSource.length, lineupStartersSource[0]?.name, lineupStartersSource[0]?.order]);
+
+  useEffect(() => {
+    setPitchersOrder(lineupPitchersSource);
+  }, [lineupPitchersSource.length, lineupPitchersSource[0]?.name, lineupPitchersSource[0]?.role]);
 
   const bases = game?.bases || [];
   const base1 = !!bases[0];
@@ -392,6 +418,11 @@ export default function HanwhaDashboard(props) {
     screen,
   ]);
 
+  // 액션 후 payload가 갱신되면 진행중 상태 자동 해제
+  useEffect(() => {
+    setLoadingAction(null);
+  }, [game?.inning, game?.outs, game?.score?.away, game?.score?.home, game?.feed?.length, screen]);
+
   if (screen === "home") {
     return (
       <HomeHub
@@ -405,14 +436,18 @@ export default function HanwhaDashboard(props) {
   if (screen === "schedule") {
     const rows = screens?.today_schedule?.rows || [];
     const hgRows = screens?.hanwha_games?.rows || [];
+    const hgDetail = screens?.hanwha_games?.detail || {};
     const selectedIdx = Number(screens?.hanwha_games?.selected_idx || 0);
+
     return (
       <div className="ss-shell">
         <ScreenHeader title="오늘 일정" onBack={() => setScreen("home")} />
         {lastError ? <div className="ss-error-banner">오류 · {lastError}</div> : null}
+
         <Card title={`오늘 전체 일정 (${fmtText(screens?.today_schedule?.date)})`}>
           <SimpleTable rows={rows} />
         </Card>
+
         <Card title="오늘 한화 경기">
           {hgRows.length ? (
             <div className="ss-form-block">
@@ -430,13 +465,58 @@ export default function HanwhaDashboard(props) {
               </select>
             </div>
           ) : null}
+
           <div className="ss-hanwha-game-actions">
             <button className="ss-primary-btn" onClick={() => emitAction("start_or_resume")}>한화 경기 시작/이어서 진행</button>
             <button className="ss-secondary-btn" onClick={() => emitAction("simulate_selected")}>한화 경기 끝까지 + 나머지 자동</button>
             <button className="ss-secondary-btn" onClick={() => emitAction("simulate_day")}>오늘 경기 전부 자동</button>
           </div>
+
           <SimpleTable rows={hgRows} />
         </Card>
+
+        {hgDetail?.selected_game ? (
+          <Card title={`한화 vs ${fmtText(hgDetail?.selected_game?.opponent)} 상세 정보`}>
+            <div className="ss-two-col">
+              <div>
+                <div className="ss-card-title">한화 선발 라인업</div>
+                <div className="ss-live-lineup-list" style={{ maxHeight: 260 }}>
+                  {(hgDetail?.hanwha_lineup || []).map((p) => (
+                    <div key={`sch-h-${p.order}-${p.name}`} className="ss-live-lineup-row" style={{ background: '#fff' }}>
+                      <div className="ss-live-lineup-left" style={{ color: '#0f172a' }}>{p.order}. {p.name} ({p.pos})</div>
+                      <div className="ss-live-lineup-right">OPS {Number(p.ops || 0).toFixed(3)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="ss-card-title">상대 선발 라인업</div>
+                <div className="ss-live-lineup-list" style={{ maxHeight: 260 }}>
+                  {(hgDetail?.opponent_lineup || []).map((p) => (
+                    <div key={`sch-o-${p.order}-${p.name}`} className="ss-live-lineup-row" style={{ background: '#fff' }}>
+                      <div className="ss-live-lineup-left" style={{ color: '#0f172a' }}>{p.order}. {p.name} ({p.pos})</div>
+                      <div className="ss-live-lineup-right">OPS {Number(p.ops || 0).toFixed(3)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="ss-two-col" style={{ marginTop: 14 }}>
+              <div className="ss-note">
+                한화 선발투수 · {fmtText(hgDetail?.hanwha_starter?.name)} ({fmtText(hgDetail?.hanwha_starter?.role)}) · ERA {Number(hgDetail?.hanwha_starter?.era || 0).toFixed(2)} · WHIP {Number(hgDetail?.hanwha_starter?.whip || 0).toFixed(2)} · 체력 {fmtText(hgDetail?.hanwha_starter?.stamina, "100")}%
+              </div>
+              <div className="ss-note">
+                상대 선발투수 · {fmtText(hgDetail?.opponent_starter?.name)} ({fmtText(hgDetail?.opponent_starter?.role)}) · ERA {Number(hgDetail?.opponent_starter?.era || 0).toFixed(2)} · WHIP {Number(hgDetail?.opponent_starter?.whip || 0).toFixed(2)} · 체력 {fmtText(hgDetail?.opponent_starter?.stamina, "100")}%
+              </div>
+            </div>
+
+            <button className="ss-secondary-btn" onClick={() => setScreen("lineup")}>
+              한화 라인업(타순/선발투수) 바로 편집
+            </button>
+          </Card>
+        ) : null}
       </div>
     );
   }
@@ -512,89 +592,62 @@ export default function HanwhaDashboard(props) {
   }
 
   if (screen === "lineup") {
-    const initialStarters = screens?.hanwha_lineup?.starters || [];
-    const initialPitchers = screens?.hanwha_lineup?.starting_pitchers || [];
     const bench = screens?.hanwha_lineup?.bench || [];
     const bullpen_pitchers = screens?.hanwha_lineup?.bullpen_pitchers || [];
-    
-    // 로컬 드래그 상태 관리
-    const [draggedStarter, setDraggedStarter] = useState(null);
-    const [draggedPitcher, setDraggedPitcher] = useState(null);
-    const [startersOrder, setStartersOrder] = useState(() => initialStarters);
-    const [pitchersOrder, setPitchersOrder] = useState(() => initialPitchers);
-    
-    // starters/pitchers 변경 시 로컬 상태 동기화 (이름으로 변경 감지)
-    useEffect(() => {
-      if (initialStarters && initialStarters.length > 0) {
-        setStartersOrder(initialStarters);
-      }
-    }, [initialStarters.length, initialStarters[0]?.name]);
-    
-    useEffect(() => {
-      if (initialPitchers && initialPitchers.length > 0) {
-        setPitchersOrder(initialPitchers);
-      }
-    }, [initialPitchers.length, initialPitchers[0]?.name]);
-    
-    // 타자 순서 변경 핸들러
+
     const handleStarterDragStart = (e, idx) => {
       setDraggedStarter(idx);
       e.dataTransfer.effectAllowed = "move";
     };
-    
+
     const handleStarterDragOver = (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
     };
-    
+
     const handleStarterDrop = (e, dropIdx) => {
       e.preventDefault();
       if (draggedStarter === null || draggedStarter === dropIdx) {
         setDraggedStarter(null);
         return;
       }
-      
+
       const newOrder = [...startersOrder];
       const [removed] = newOrder.splice(draggedStarter, 1);
       newOrder.splice(dropIdx, 0, removed);
-      
-      // 타순 업데이트
+
       const updatedOrder = newOrder.map((p, idx) => ({ ...p, order: idx + 1 }));
       setStartersOrder(updatedOrder);
-      
-      // 백엔드에 전송
-      emitAction("update_batting_order", { new_order: updatedOrder.map(p => p.name) });
+      emitAction("update_batting_order", { new_order: updatedOrder.map((p) => p.name) });
       setDraggedStarter(null);
     };
-    
-    // 투수 순서 변경 핸들러
+
     const handlePitcherDragStart = (e, idx) => {
       setDraggedPitcher(idx);
       e.dataTransfer.effectAllowed = "move";
     };
-    
+
     const handlePitcherDragOver = (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
     };
-    
+
     const handlePitcherDrop = (e, dropIdx) => {
       e.preventDefault();
       if (draggedPitcher === null || draggedPitcher === dropIdx) {
         setDraggedPitcher(null);
         return;
       }
-      
+
       const newOrder = [...pitchersOrder];
       const [removed] = newOrder.splice(draggedPitcher, 1);
       newOrder.splice(dropIdx, 0, removed);
-      
-      // 백엔드에 전송
-      emitAction("update_pitcher_rotation", { new_order: newOrder.map(p => p.role) });
+
       setPitchersOrder(newOrder);
+      emitAction("update_pitcher_rotation", { new_order: newOrder.map((p) => p.role) });
       setDraggedPitcher(null);
     };
-    
+
     return (
       <div className="ss-shell">
         <ScreenHeader title="한화 라인업" onBack={() => setScreen("home")} />
@@ -671,8 +724,9 @@ export default function HanwhaDashboard(props) {
                     >
                       <div className="ss-pitcher-role">{p.role}</div>
                       <div className="ss-pitcher-name">{p.name}</div>
+                      {p.next_game_starter ? <div className="ss-live-subnote" style={{ marginBottom: 6, padding: '4px 8px' }}>다음 경기 선발</div> : null}
                       <div className="ss-pitcher-stat">ERA {Number(p.era || 0).toFixed(3)}</div>
-                      <div className="ss-pitcher-stat-sm">WHIP {Number(p.whip || 0).toFixed(3)}</div>
+                      <div className="ss-pitcher-stat-sm">WHIP {Number(p.whip || 0).toFixed(3)} · 체력 {Number(p.stamina ?? 100)}%</div>
                     </div>
                   ))}
                 </div>
@@ -841,99 +895,115 @@ export default function HanwhaDashboard(props) {
             </div>
           </div>
 
-          <div className="ss-field-photo-wrap">
-            <img src={fieldImage} alt="야구장" className="ss-field-photo" loading="lazy" />
+          <div className="ss-live-mid-grid">
+            <div className="ss-live-field-stage">
+              <div className="ss-field-photo-wrap">
+                <img src={fieldImage} alt="야구장" className="ss-field-photo" loading="lazy" />
+                <div className="ss-base-runner ss-base-runner-1b">
+                  {bases?.[0]?.name ? `${bases[0].name}` : "1루"}
+                </div>
+                <div className="ss-base-runner ss-base-runner-2b">
+                  {bases?.[1]?.name ? `${bases[1].name}` : "2루"}
+                </div>
+                <div className="ss-base-runner ss-base-runner-3b">
+                  {bases?.[2]?.name ? `${bases[2].name}` : "3루"}
+                </div>
+              </div>
+            </div>
+
+            <div className="ss-live-side-panel">
+              <div className="ss-live-lineup-card">
+                <div className="ss-live-lineup-title">AWAY 라인업</div>
+                <div className="ss-live-lineup-list">
+                  {(awayState?.lineup || []).map((p) => {
+                    const isCurrent = activeSide === "away" && String(p.name) === String(currentBatter?.name);
+                    return (
+                      <div key={`away-lineup-${p.order}-${p.name}`} className={`ss-live-lineup-row ${isCurrent ? "current" : ""}`}>
+                        <div className="ss-live-lineup-left">{p.order}. {p.name} ({p.pos})</div>
+                        <div className="ss-live-lineup-right">{p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="ss-live-lineup-card away-tone">
+                <div className="ss-live-lineup-title">HOME 라인업</div>
+                <div className="ss-live-lineup-list">
+                  {(homeState?.lineup || []).map((p) => {
+                    const isCurrent = activeSide === "home" && String(p.name) === String(currentBatter?.name);
+                    return (
+                      <div key={`home-lineup-${p.order}-${p.name}`} className={`ss-live-lineup-row ${isCurrent ? "current" : ""}`}>
+                        <div className="ss-live-lineup-left">{p.order}. {p.name} ({p.pos})</div>
+                        <div className="ss-live-lineup-right">{p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </motion.div>
 
-      <div className="ss-main-grid ss-main-grid-live">
-        <Card title="AWAY 라인업">
-          <div style={{ fontSize: '12px', maxHeight: '200px', overflowY: 'auto' }}>
-            {(awayState?.lineup || []).map((p) => (
-              <div key={`away-lineup-${p.order}-${p.name}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e2e8f0', alignItems: 'center' }}>
-                <div style={{ fontWeight: 700, color: '#1e293b' }}>
-                  {p.pos} {p.name}
-                </div>
-                <div style={{ fontSize: '11px', color: '#64748b' }}>
-                  {p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}
-                </div>
-              </div>
+      <Card title="감독 개입">
+        <div className="ss-form-block">
+          <button className="ss-primary-btn" onClick={() => emitAction("force_bunt")} disabled={!manager.can_force_bunt}>
+            다음 타석 강제 번트
+          </button>
+        </div>
+
+        <div className="ss-form-block">
+          <div className="ss-form-label">대타</div>
+          <div className="ss-live-subnote">OUT {fmtText(currentBatter?.name, "-")} → IN {fmtText(phName, "선택 대기")}</div>
+          <select className="ss-select" value={phName} onChange={(e) => setPhName(e.target.value)}>
+            <option value="">대타 선택</option>
+            {(manager.bench_for_ph || []).map((p) => (
+              <option key={p.name} value={p.name}>{p.name}</option>
             ))}
-          </div>
-        </Card>
+          </select>
+          <button className="ss-secondary-btn" onClick={() => emitAction("apply_ph", { name: phName })} disabled={!phName}>
+            대타 적용
+          </button>
+        </div>
 
-        <Card title="HOME 라인업">
-          <div style={{ fontSize: '12px', maxHeight: '200px', overflowY: 'auto' }}>
-            {(homeState?.lineup || []).map((p) => (
-              <div key={`home-lineup-${p.order}-${p.name}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e2e8f0', alignItems: 'center' }}>
-                <div style={{ fontWeight: 700, color: '#1e293b' }}>
-                  {p.pos} {p.name}
-                </div>
-                <div style={{ fontSize: '11px', color: '#64748b' }}>
-                  {p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}
-                </div>
-              </div>
+        <div className="ss-form-block">
+          <div className="ss-form-label">대주자</div>
+          <div className="ss-live-subnote">OUT {fmtText(bases?.[Number(prBase || 1) - 1]?.name, "주자 없음")} → IN {fmtText(prName, "선택 대기")}</div>
+          <select className="ss-select" value={prName} onChange={(e) => setPrName(e.target.value)}>
+            <option value="">대주자 선택</option>
+            {(manager.bench_for_pr || []).map((p) => (
+              <option key={p.name} value={p.name}>{p.name}</option>
             ))}
-          </div>
-        </Card>
+          </select>
 
-        <Card title="감독 개입">
-          <div className="ss-form-block">
-            <button className="ss-primary-btn" onClick={() => emitAction("force_bunt")} disabled={!manager.can_force_bunt}>
-              다음 타석 강제 번트
-            </button>
-          </div>
+          <select className="ss-select" value={prBase} onChange={(e) => setPrBase(Number(e.target.value))}>
+            {(manager.pr_base_choices?.length ? manager.pr_base_choices : [1]).map((b) => (
+              <option key={b} value={b}>{b}루</option>
+            ))}
+          </select>
 
-          <div className="ss-form-block">
-            <div className="ss-form-label">대타</div>
-            <select className="ss-select" value={phName} onChange={(e) => setPhName(e.target.value)}>
-              <option value="">대타 선택</option>
-              {(manager.bench_for_ph || []).map((p) => (
-                <option key={p.name} value={p.name}>{p.name}</option>
-              ))}
-            </select>
-            <button className="ss-secondary-btn" onClick={() => emitAction("apply_ph", { name: phName })} disabled={!phName}>
-              대타 적용
-            </button>
-          </div>
+          <button className="ss-secondary-btn" onClick={() => emitAction("apply_pr", { name: prName, base_number: prBase })} disabled={!prName}>
+            대주자 적용
+          </button>
+        </div>
 
-          <div className="ss-form-block">
-            <div className="ss-form-label">대주자</div>
-            <select className="ss-select" value={prName} onChange={(e) => setPrName(e.target.value)}>
-              <option value="">대주자 선택</option>
-              {(manager.bench_for_pr || []).map((p) => (
-                <option key={p.name} value={p.name}>{p.name}</option>
-              ))}
-            </select>
+        <div className="ss-form-block">
+          <div className="ss-form-label">강제 투수 교체</div>
+          <div className="ss-live-subnote">OUT {fmtText(currentPitcher?.name, "-")} → IN {fmtText(manualRole, "선택 대기")}</div>
+          <select className="ss-select" value={manualRole} onChange={(e) => setManualRole(e.target.value)}>
+            <option value="">역할 선택</option>
+            {(manager.eligible_manual_pitchers || []).map((role) => (
+              <option key={role} value={role}>{role}</option>
+            ))}
+          </select>
+          <button className="ss-secondary-btn" onClick={() => emitAction("apply_manual_pitcher", { role: manualRole })} disabled={!manualRole}>
+            강제 투수 교체 적용
+          </button>
+        </div>
 
-            <select className="ss-select" value={prBase} onChange={(e) => setPrBase(Number(e.target.value))}>
-              {(manager.pr_base_choices?.length ? manager.pr_base_choices : [1]).map((b) => (
-                <option key={b} value={b}>{b}루</option>
-              ))}
-            </select>
-
-            <button className="ss-secondary-btn" onClick={() => emitAction("apply_pr", { name: prName, base_number: prBase })} disabled={!prName}>
-              대주자 적용
-            </button>
-          </div>
-
-          <div className="ss-form-block">
-            <div className="ss-form-label">강제 투수 교체</div>
-            <select className="ss-select" value={manualRole} onChange={(e) => setManualRole(e.target.value)}>
-              <option value="">역할 선택</option>
-              {(manager.eligible_manual_pitchers || []).map((role) => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-            <button className="ss-secondary-btn" onClick={() => emitAction("apply_manual_pitcher", { role: manualRole })} disabled={!manualRole}>
-              강제 투수 교체 적용
-            </button>
-          </div>
-
-          <div className="ss-note">현재 액션은 Python 시뮬 엔진으로 돌아가고, 이 패널은 React UI 레이어만 담당합니다.</div>
-        </Card>
-      </div>
+        <div className="ss-note">현재 액션은 Python 시뮬 엔진으로 돌아가고, 이 패널은 React UI 레이어만 담당합니다.</div>
+      </Card>
 
       <div className="ss-bottom-grid">
         <Card title="현재 타석 매치업">
