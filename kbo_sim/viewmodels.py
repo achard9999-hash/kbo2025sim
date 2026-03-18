@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
+
 from .config import USER_TEAM
 
 
@@ -17,6 +19,45 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
         return float(v)
     except Exception:
         return default
+
+
+def _format_innings(innings: float) -> str:
+    """Format innings as 'X' or 'X 1/3' or 'X 2/3' format."""
+    if not isinstance(innings, (int, float)):
+        try:
+            innings = float(innings)
+        except Exception:
+            return "0"
+    
+    whole = int(innings)
+    frac = innings - whole
+    
+    if frac < 0.15:  # 0.0-0.15 범위는 0 또는 반올림 오차
+        return str(whole)
+    elif frac < 0.5:  # 0.15-0.5 범위는 1/3
+        return f"{whole} 1/3"
+    elif frac < 0.85:  # 0.5-0.85 범위는 2/3
+        return f"{whole} 2/3"
+    else:  # 0.85 이상은 올림
+        return str(whole + 1)
+
+
+def _format_stat(value: float, decimal_places: int = 3) -> str:
+    """Format stat value to specified decimal places."""
+    if not isinstance(value, (int, float)):
+        try:
+            value = float(value)
+        except Exception:
+            return "0"
+    
+    if decimal_places == 0:
+        return str(int(round(value)))
+    elif decimal_places == 2:
+        return f"{value:.2f}"
+    elif decimal_places == 3:
+        return f"{value:.3f}"
+    else:
+        return f"{value:.{decimal_places}f}"
 
 
 def serialize_player_brief(player: Optional[dict], today_stats: Optional[Dict[Tuple[str, str], dict]] = None) -> Optional[dict]:
@@ -305,6 +346,41 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
         starters = []
         bench = []
 
+    # 투수 정보 추가
+    starting_pitchers = []
+    bullpen_pitchers = []
+    try:
+        from .config import STARTER_ROLES, CHASE_ROLES, SETUP_ROLES, CLOSER_ROLE
+        pitchers_dict = state.team_pitchers.get(USER_TEAM, {})
+        
+        # 선발 투수 (1~5번)
+        for role in STARTER_ROLES:
+            pitcher = pitchers_dict.get(role)
+            if pitcher:
+                starting_pitchers.append({
+                    "name": pitcher.get("name", ""),
+                    "role": role,
+                    "era": _safe_float(pitcher.get("era", 0.0)),
+                    "whip": _safe_float(pitcher.get("whip", 0.0)),
+                    "k_rate": _safe_float(pitcher.get("k_rate", 0.0)),
+                })
+        
+        # 불펜 투수 (추격조, 셋업맨, 마무리)
+        all_bullpen_roles = CHASE_ROLES + SETUP_ROLES + [CLOSER_ROLE]
+        for role in all_bullpen_roles:
+            pitcher = pitchers_dict.get(role)
+            if pitcher:
+                bullpen_pitchers.append({
+                    "name": pitcher.get("name", ""),
+                    "role": role,
+                    "era": _safe_float(pitcher.get("era", 0.0)),
+                    "whip": _safe_float(pitcher.get("whip", 0.0)),
+                    "k_rate": _safe_float(pitcher.get("k_rate", 0.0)),
+                })
+    except Exception as e:
+        starting_pitchers = []
+        bullpen_pitchers = []
+
     trade_markets: Dict[str, List[dict]] = {}
     try:
         for team in state.team_hitters.keys():
@@ -346,17 +422,135 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
     batter_leaders_rows = []
     pitcher_leaders_rows = []
     try:
-        standings_rows = state.standings.to_dict("records") if hasattr(state, "standings") else []
+        standings_df = state.standings.copy() if hasattr(state, "standings") else None
+        if standings_df is not None:
+            # 승률 컬럼 포매팅
+            if '승률' in standings_df.columns:
+                standings_df['승률'] = standings_df['승률'].apply(lambda x: f"{float(x):.3f}" if pd.notna(x) else "-")
+            standings_rows = standings_df.to_dict("records")
+        else:
+            standings_rows = []
     except Exception:
         standings_rows = []
+    
+    # 타자 리더보드: OPS 순 TOP20
     try:
-        batter_leaders_rows = state.batter_leaders.head(30).to_dict("records") if hasattr(state, "batter_leaders") else []
+        if hasattr(state, "batter_leaders") and not state.batter_leaders.empty:
+            df = state.batter_leaders.copy()
+            # OPS 순으로 정렬하여 TOP20 추출
+            if "OPS" in df.columns:
+                df_sorted = df.nlargest(20, "OPS").reset_index(drop=True)
+                # 순위, 소숫점 포매팅 추가
+                rows = []
+                for idx, row in df_sorted.iterrows():
+                    formatted_row = dict(row)
+                    formatted_row["순위"] = idx + 1
+                    # 소숫점 3자리 포매팅
+                    if "타율" in formatted_row:
+                        formatted_row["타율"] = f"{_safe_float(formatted_row['타율']):.3f}"
+                    if "출루율" in formatted_row:
+                        formatted_row["출루율"] = f"{_safe_float(formatted_row['출루율']):.3f}"
+                    if "장타율" in formatted_row:
+                        formatted_row["장타율"] = f"{_safe_float(formatted_row['장타율']):.3f}"
+                    if "OPS" in formatted_row:
+                        formatted_row["OPS"] = f"{_safe_float(formatted_row['OPS']):.3f}"
+                    rows.append(formatted_row)
+                batter_leaders_rows = rows
+            else:
+                batter_leaders_rows = []
+        else:
+            batter_leaders_rows = []
     except Exception:
         batter_leaders_rows = []
+    
+    # 주요 기록별 리더보드 (타자)
+    batter_highlights = {}
     try:
-        pitcher_leaders_rows = state.pitcher_leaders.head(30).to_dict("records") if hasattr(state, "pitcher_leaders") else []
+        if hasattr(state, "batter_leaders") and not state.batter_leaders.empty:
+            df = state.batter_leaders.copy()
+            # 홈런 TOP3
+            if "홈런" in df.columns:
+                batter_highlights["홈런"] = df.nlargest(3, "홈런")[["이름", "팀", "홈런"]].to_dict("records")
+            # 안타 TOP3
+            if "안타" in df.columns:
+                batter_highlights["안타"] = df.nlargest(3, "안타")[["이름", "팀", "안타"]].to_dict("records")
+            # 타율 TOP3
+            if "타율" in df.columns:
+                batter_highlights["타율"] = df.nlargest(3, "타율")[["이름", "팀", "타율"]].to_dict("records")
+            # 출루율 TOP3
+            if "출루율" in df.columns:
+                batter_highlights["출루율"] = df.nlargest(3, "출루율")[["이름", "팀", "출루율"]].to_dict("records")
+            # OPS TOP3
+            if "OPS" in df.columns:
+                batter_highlights["OPS"] = df.nlargest(3, "OPS")[["이름", "팀", "OPS"]].to_dict("records")
+    except Exception:
+        batter_highlights = {}
+    
+    # 투수 리더보드: 규정이닝 필터 + ERA 순 TOP20
+    try:
+        if hasattr(state, "pitcher_leaders") and not state.pitcher_leaders.empty:
+            df = state.pitcher_leaders.copy()
+            
+            # 규정이닝 적용 (경기수 * 1)
+            if "경기" in df.columns and "이닝" in df.columns:
+                games_played = _safe_int(df["경기"].iloc[0]) if len(df) > 0 else 0
+                min_innings = games_played * 1.0 if games_played > 0 else 1.0
+                df = df[_safe_float(df["이닝"]) >= min_innings]
+            
+            # ERA 순으로 정렬하여 TOP20 추출
+            if "방어율" in df.columns:
+                df_sorted = df.nsmallest(20, "방어율").reset_index(drop=True)
+                # 순위, 소숫점 포매팅, 이닝 변환 추가
+                rows = []
+                for idx, row in df_sorted.iterrows():
+                    formatted_row = dict(row)
+                    formatted_row["순위"] = idx + 1
+                    # 방어율, WHIP: 소숫점 2자리
+                    if "방어율" in formatted_row:
+                        formatted_row["방어율"] = f"{_safe_float(formatted_row['방어율']):.2f}"
+                    if "WHIP" in formatted_row:
+                        formatted_row["WHIP"] = f"{_safe_float(formatted_row['WHIP']):.2f}"
+                    # 이닝: 분수 표기 (180.6777777 → "180 2/3")
+                    if "이닝" in formatted_row:
+                        formatted_row["이닝"] = _format_innings(_safe_float(formatted_row['이닝']))
+                    rows.append(formatted_row)
+                pitcher_leaders_rows = rows
+            else:
+                pitcher_leaders_rows = []
+        else:
+            pitcher_leaders_rows = []
     except Exception:
         pitcher_leaders_rows = []
+    
+    # 투수 주요 기록별 리더보드
+    pitcher_highlights = {}
+    try:
+        if hasattr(state, "pitcher_leaders") and not state.pitcher_leaders.empty:
+            df = state.pitcher_leaders.copy()
+            
+            # 규정이닝 필터 적용
+            if "경기" in df.columns and "이닝" in df.columns:
+                games_played = _safe_int(df["경기"].iloc[0]) if len(df) > 0 else 0
+                min_innings = games_played * 1.0 if games_played > 0 else 1.0
+                df = df[_safe_float(df["이닝"]) >= min_innings]
+            
+            # ERA TOP3 (낮을수록 좋음)
+            if "방어율" in df.columns:
+                pitcher_highlights["ERA"] = df.nsmallest(3, "방어율")[["이름", "팀", "방어율"]].to_dict("records")
+            # WHIP TOP3
+            if "WHIP" in df.columns:
+                pitcher_highlights["WHIP"] = df.nsmallest(3, "WHIP")[["이름", "팀", "WHIP"]].to_dict("records")
+            # 이닝 TOP3
+            if "이닝" in df.columns:
+                pitcher_highlights["이닝"] = df.nlargest(3, "이닝")[["이름", "팀", "이닝"]].to_dict("records")
+            # 삼진 TOP3
+            if "탈삼진" in df.columns:
+                pitcher_highlights["삼진"] = df.nlargest(3, "탈삼진")[["이름", "팀", "탈삼진"]].to_dict("records")
+            # 볼넷 TOP3
+            if "볼넷" in df.columns:
+                pitcher_highlights["볼넷"] = df.nlargest(3, "볼넷")[["이름", "팀", "볼넷"]].to_dict("records")
+    except Exception:
+        pitcher_highlights = {}
 
     return {
         "schema_version": "app_payload_v1",
@@ -375,6 +569,26 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
             "hanwha_lineup": {
                 "starters": [serialize_player_brief(p) for p in starters],
                 "bench": [serialize_player_brief(p) for p in bench],
+                "starting_pitchers": [
+                    {
+                        "name": p.get("name", ""),
+                        "role": p.get("role", "1번 선발") if isinstance(p, dict) else "선발",
+                        "era": _safe_float(p.get("era", 0.0) if isinstance(p, dict) else 0.0),
+                        "whip": _safe_float(p.get("whip", 0.0) if isinstance(p, dict) else 0.0),
+                        "k_rate": _safe_float(p.get("k_rate", 0.0) if isinstance(p, dict) else 0.0),
+                    }
+                    for p in starting_pitchers
+                ],
+                "bullpen_pitchers": [
+                    {
+                        "name": p.get("name", ""),
+                        "role": p.get("role", "불펜") if isinstance(p, dict) else "불펜",
+                        "era": _safe_float(p.get("era", 0.0) if isinstance(p, dict) else 0.0),
+                        "whip": _safe_float(p.get("whip", 0.0) if isinstance(p, dict) else 0.0),
+                        "k_rate": _safe_float(p.get("k_rate", 0.0) if isinstance(p, dict) else 0.0),
+                    }
+                    for p in bullpen_pitchers
+                ],
             },
             "trade": {
                 "opponents": sorted([t for t in state.team_hitters.keys() if t != USER_TEAM]),
@@ -386,6 +600,8 @@ def build_app_payload(state, eligible_manual_roles: Optional[List[str]] = None) 
             "leaders": {
                 "batters": batter_leaders_rows,
                 "pitchers": pitcher_leaders_rows,
+                "batter_highlights": batter_highlights,
+                "pitcher_highlights": pitcher_highlights,
             },
         },
     }

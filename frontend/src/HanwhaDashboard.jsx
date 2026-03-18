@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Streamlit } from "streamlit-component-lib";
 import { motion } from "framer-motion";
-import fieldImage from "../../image/야구장시뮬.png";
+import fieldImage from "../../image/경기장 이미지.PNG";
 import mainBg from "../../image/메인화면.png";
 import logoHanwha from "../../image/한화.png";
 import logoKIA from "../../image/KIA.png";
@@ -346,6 +346,7 @@ export default function HanwhaDashboard(props) {
   const lastError = screens?.last_error;
 
   const [screen, setScreen] = useState("home");
+  const [loadingAction, setLoadingAction] = useState(null);
 
   const [phName, setPhName] = useState("");
   const [prName, setPrName] = useState("");
@@ -452,48 +453,252 @@ export default function HanwhaDashboard(props) {
   }
 
   if (screen === "leaders") {
+    const batter_highlights = screens?.leaders?.batter_highlights || {};
+    const pitcher_highlights = screens?.leaders?.pitcher_highlights || {};
+    const batters = screens?.leaders?.batters || [];
+    const pitchers = screens?.leaders?.pitchers || [];
+    
+    const renderTopCard = (title, data, stat_key) => {
+      if (!data || data.length === 0) return null;
+      return (
+        <div key={title} className="ss-leader-card">
+          <div className="ss-leader-title">{title}</div>
+          {data.map((p, idx) => (
+            <div key={`${idx}-${p['이름'] || p.name}`} className="ss-leader-item">
+              <div className="ss-leader-badge">{idx + 1}</div>
+              <div className="ss-leader-name">{p['이름'] || p.name}</div>
+              <div className="ss-leader-value">{p[stat_key] || "-"}</div>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
     return (
       <div className="ss-shell">
         <ScreenHeader title="리더보드" onBack={() => setScreen("home")} />
-        <div className="ss-two-col">
-          <Card title="타자 TOP">
-            <SimpleTable rows={screens?.leaders?.batters || []} />
-          </Card>
-          <Card title="투수 TOP">
-            <SimpleTable rows={screens?.leaders?.pitchers || []} />
-          </Card>
+        
+        <div className="ss-leader-section">
+          <div className="ss-leader-header">⭐ 타자 주요 기록 (TOP 5)</div>
+          <div className="ss-leader-cards-row">
+            {renderTopCard("홈런", batter_highlights["홈런"], "홈런")}
+            {renderTopCard("안타", batter_highlights["안타"], "안타")}
+            {renderTopCard("타율", batter_highlights["타율"], "타율")}
+            {renderTopCard("출루율", batter_highlights["출루율"], "출루율")}
+            {renderTopCard("OPS", batter_highlights["OPS"], "OPS")}
+          </div>
         </div>
+
+        <Card title="타자 전체 순위 (OPS 순 TOP20)">
+          <SimpleTable rows={batters} />
+        </Card>
+
+        <div className="ss-leader-section">
+          <div className="ss-leader-header">⭐ 투수 주요 기록 (TOP 5)</div>
+          <div className="ss-leader-cards-row">
+            {renderTopCard("ERA", pitcher_highlights["ERA"], "방어율")}
+            {renderTopCard("WHIP", pitcher_highlights["WHIP"], "WHIP")}
+            {renderTopCard("이닝", pitcher_highlights["이닝"], "이닝")}
+            {renderTopCard("삼진", pitcher_highlights["삼진"], "탈삼진")}
+            {renderTopCard("볼넷", pitcher_highlights["볼넷"], "볼넷")}
+          </div>
+        </div>
+
+        <Card title="투수 전체 순위 (ERA 순 TOP20)">
+          <SimpleTable rows={pitchers} />
+        </Card>
       </div>
     );
   }
 
   if (screen === "lineup") {
-    const starters = screens?.hanwha_lineup?.starters || [];
+    const initialStarters = screens?.hanwha_lineup?.starters || [];
+    const initialPitchers = screens?.hanwha_lineup?.starting_pitchers || [];
     const bench = screens?.hanwha_lineup?.bench || [];
+    const bullpen_pitchers = screens?.hanwha_lineup?.bullpen_pitchers || [];
+    
+    // 로컬 드래그 상태 관리
+    const [draggedStarter, setDraggedStarter] = useState(null);
+    const [draggedPitcher, setDraggedPitcher] = useState(null);
+    const [startersOrder, setStartersOrder] = useState(() => initialStarters);
+    const [pitchersOrder, setPitchersOrder] = useState(() => initialPitchers);
+    
+    // starters/pitchers 변경 시 로컬 상태 동기화 (이름으로 변경 감지)
+    useEffect(() => {
+      if (initialStarters && initialStarters.length > 0) {
+        setStartersOrder(initialStarters);
+      }
+    }, [initialStarters.length, initialStarters[0]?.name]);
+    
+    useEffect(() => {
+      if (initialPitchers && initialPitchers.length > 0) {
+        setPitchersOrder(initialPitchers);
+      }
+    }, [initialPitchers.length, initialPitchers[0]?.name]);
+    
+    // 타자 순서 변경 핸들러
+    const handleStarterDragStart = (e, idx) => {
+      setDraggedStarter(idx);
+      e.dataTransfer.effectAllowed = "move";
+    };
+    
+    const handleStarterDragOver = (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    };
+    
+    const handleStarterDrop = (e, dropIdx) => {
+      e.preventDefault();
+      if (draggedStarter === null || draggedStarter === dropIdx) {
+        setDraggedStarter(null);
+        return;
+      }
+      
+      const newOrder = [...startersOrder];
+      const [removed] = newOrder.splice(draggedStarter, 1);
+      newOrder.splice(dropIdx, 0, removed);
+      
+      // 타순 업데이트
+      const updatedOrder = newOrder.map((p, idx) => ({ ...p, order: idx + 1 }));
+      setStartersOrder(updatedOrder);
+      
+      // 백엔드에 전송
+      emitAction("update_batting_order", { new_order: updatedOrder.map(p => p.name) });
+      setDraggedStarter(null);
+    };
+    
+    // 투수 순서 변경 핸들러
+    const handlePitcherDragStart = (e, idx) => {
+      setDraggedPitcher(idx);
+      e.dataTransfer.effectAllowed = "move";
+    };
+    
+    const handlePitcherDragOver = (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    };
+    
+    const handlePitcherDrop = (e, dropIdx) => {
+      e.preventDefault();
+      if (draggedPitcher === null || draggedPitcher === dropIdx) {
+        setDraggedPitcher(null);
+        return;
+      }
+      
+      const newOrder = [...pitchersOrder];
+      const [removed] = newOrder.splice(draggedPitcher, 1);
+      newOrder.splice(dropIdx, 0, removed);
+      
+      // 백엔드에 전송
+      emitAction("update_pitcher_rotation", { new_order: newOrder.map(p => p.role) });
+      setPitchersOrder(newOrder);
+      setDraggedPitcher(null);
+    };
+    
     return (
       <div className="ss-shell">
         <ScreenHeader title="한화 라인업" onBack={() => setScreen("home")} />
-        <div className="ss-two-col">
-          <Card title="선발(스타팅 9)">
-            <div className="ss-lineup-list">
-              {starters.map((p) => (
-                <div key={`st-${p.order}-${p.name}`} className="ss-lineup-row">
-                  <div className="ss-lineup-name">{p.pos} / {p.name}</div>
-                  <div className="ss-lineup-meta">시즌타율 {p.avg != null ? Number(p.avg).toFixed(3) : "-"}</div>
+        
+        <div style={{ background: '#fff3e0', border: '2px solid var(--ss-hanwha)', borderRadius: '10px', padding: '12px', marginBottom: '16px', fontSize: '13px', color: '#d97706', fontWeight: 700 }}>
+          💡 팁: 카드를 드래그해서 타순/로테이션을 변경할 수 있습니다. (다음 경기부터 적용됨)
+        </div>
+        
+        <div className="ss-lineup-section">
+          <div className="ss-lineup-header">🏟️ 타자 라인업</div>
+          
+          <div className="ss-lineup-cards">
+            <Card title="선발 타자 (스타팅 9) - 드래그해서 타순 변경">
+              <div className="ss-player-grid">
+                {startersOrder.map((p, idx) => (
+                  <div
+                    key={`st-${idx}-${p.name}`}
+                    className="ss-player-card"
+                    draggable
+                    onDragStart={(e) => handleStarterDragStart(e, idx)}
+                    onDragOver={handleStarterDragOver}
+                    onDrop={(e) => handleStarterDrop(e, idx)}
+                    style={{
+                      opacity: draggedStarter === idx ? 0.5 : 1,
+                      cursor: 'move',
+                      transition: 'opacity 0.2s'
+                    }}
+                  >
+                    <div className="ss-player-num">{idx + 1}</div>
+                    <div className="ss-player-name">{p.name}</div>
+                    <div className="ss-player-pos">{p.pos}</div>
+                    <div className="ss-player-stat">OPS {Number(p.ops || 0).toFixed(3)}</div>
+                    <div className="ss-player-stat">타율 {p.avg != null ? Number(p.avg).toFixed(3) : "-"}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          <div className="ss-lineup-cards">
+            <Card title="벤치 타자">
+              <div className="ss-bench-list">
+                {bench.map((p, idx) => (
+                  <div key={`bn-${idx}-${p.name}`} className="ss-bench-item">
+                    <span className="ss-bench-name">{p.pos} / {p.name}</span>
+                    <span className="ss-bench-stat">OPS {Number(p.ops || 0).toFixed(3)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        <div className="ss-lineup-section">
+          <div className="ss-lineup-header">⚾ 투수 라인업</div>
+          
+          <div className="ss-lineup-cards">
+            <Card title="선발 투수 로테이션 - 드래그해서 순서 변경">
+              {pitchersOrder.length > 0 ? (
+                <div className="ss-pitcher-grid">
+                  {pitchersOrder.map((p, idx) => (
+                    <div
+                      key={`sp-${idx}-${p.name}`}
+                      className="ss-pitcher-card"
+                      draggable
+                      onDragStart={(e) => handlePitcherDragStart(e, idx)}
+                      onDragOver={handlePitcherDragOver}
+                      onDrop={(e) => handlePitcherDrop(e, idx)}
+                      style={{
+                        opacity: draggedPitcher === idx ? 0.5 : 1,
+                        cursor: 'move',
+                        transition: 'opacity 0.2s'
+                      }}
+                    >
+                      <div className="ss-pitcher-role">{p.role}</div>
+                      <div className="ss-pitcher-name">{p.name}</div>
+                      <div className="ss-pitcher-stat">ERA {Number(p.era || 0).toFixed(3)}</div>
+                      <div className="ss-pitcher-stat-sm">WHIP {Number(p.whip || 0).toFixed(3)}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </Card>
-          <Card title="벤치">
-            <div className="ss-lineup-list">
-              {bench.map((p, idx) => (
-                <div key={`bn-${idx}-${p.name}`} className="ss-lineup-row">
-                  <div className="ss-lineup-name">{p.pos} / {p.name}</div>
-                  <div className="ss-lineup-meta">시즌타율 {p.avg != null ? Number(p.avg).toFixed(3) : "-"}</div>
+              ) : (
+                <div className="ss-empty">선발 투수 정보 없음</div>
+              )}
+            </Card>
+          </div>
+
+          <div className="ss-lineup-cards">
+            <Card title="불펜 투수">
+              {bullpen_pitchers.length > 0 ? (
+                <div className="ss-bullpen-list">
+                  {bullpen_pitchers.map((p, idx) => (
+                    <div key={`bp-${idx}-${p.name}`} className="ss-bullpen-item">
+                      <span className="ss-bullpen-role">{p.role}</span>
+                      <span className="ss-bullpen-name">{p.name}</span>
+                      <span className="ss-bullpen-stat">ERA {Number(p.era || 0).toFixed(3)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </Card>
+              ) : (
+                <div className="ss-empty">불펜 투수 정보 없음</div>
+              )}
+            </Card>
+          </div>
         </div>
       </div>
     );
@@ -521,6 +726,43 @@ export default function HanwhaDashboard(props) {
   return (
     <div className="ss-shell">
       <ScreenHeader title="실시간 경기" onBack={() => setScreen("home")} />
+      
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+        <button
+          className="ss-primary-btn"
+          onClick={() => {
+            setLoadingAction("live_pa");
+            emitAction("live_pa");
+          }}
+          disabled={loadingAction === "live_pa"}
+          style={{ marginBottom: 0, opacity: loadingAction === "live_pa" ? 0.6 : 1 }}
+        >
+          {loadingAction === "live_pa" ? "⏳ 진행중..." : "1타석 진행"}
+        </button>
+        <button
+          className="ss-primary-btn"
+          onClick={() => {
+            setLoadingAction("live_half");
+            emitAction("live_half");
+          }}
+          disabled={loadingAction === "live_half"}
+          style={{ marginBottom: 0, opacity: loadingAction === "live_half" ? 0.6 : 1 }}
+        >
+          {loadingAction === "live_half" ? "⏳ 진행중..." : "반이닝 진행"}
+        </button>
+        <button
+          className="ss-secondary-btn"
+          onClick={() => {
+            setLoadingAction("simulate_selected");
+            emitAction("simulate_selected");
+          }}
+          disabled={loadingAction === "simulate_selected"}
+          style={{ marginBottom: 0, opacity: loadingAction === "simulate_selected" ? 0.6 : 1 }}
+        >
+          {loadingAction === "simulate_selected" ? "⏳ 진행중..." : "경기 끝까지 진행"}
+        </button>
+      </div>
+
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
         <div className="ss-scoreboard">
           <div className="ss-score-top">
@@ -545,6 +787,19 @@ export default function HanwhaDashboard(props) {
             <Chip>공격 {fmtText(game.offense_team)}</Chip>
             <Chip>수비 {fmtText(game.defense_team)}</Chip>
             <Chip>완료 경기 {fmtText(summary.completed_game_count, "0")}</Chip>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ background: 'linear-gradient(135deg, var(--ss-hanwha-light), white)', border: '2px solid var(--ss-hanwha)', borderRadius: '12px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: 'var(--ss-sub)', fontWeight: 700, marginBottom: '4px' }}>현재 타자 🔥</div>
+              <div style={{ fontSize: '14px', color: 'var(--ss-text)', fontWeight: 950 }}>{fmtText(currentBatter?.name, "-")}</div>
+              <div style={{ fontSize: '10px', color: 'var(--ss-sub)', fontWeight: 700, marginTop: '4px' }}>{fmtText(currentBatter?.pos, "")} · {fmtText(currentBatter?.order, "")}번 타자</div>
+            </div>
+            <div style={{ background: 'linear-gradient(135deg, #E8D5F2, white)', border: '2px solid #7C3AED', borderRadius: '12px', padding: '12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#6d28d9', fontWeight: 700, marginBottom: '4px' }}>현재 투수 🔥</div>
+              <div style={{ fontSize: '14px', color: 'var(--ss-text)', fontWeight: 950 }}>{fmtText(currentPitcher?.name, "-")}</div>
+              <div style={{ fontSize: '10px', color: 'var(--ss-sub)', fontWeight: 700, marginTop: '4px' }}>{fmtText(currentPitcher?.role, "투수")}</div>
+            </div>
           </div>
 
           <div className="ss-linescore">
@@ -594,14 +849,14 @@ export default function HanwhaDashboard(props) {
 
       <div className="ss-main-grid ss-main-grid-live">
         <Card title="AWAY 라인업">
-          <div className="ss-lineup-list">
+          <div style={{ fontSize: '12px', maxHeight: '200px', overflowY: 'auto' }}>
             {(awayState?.lineup || []).map((p) => (
-              <div key={`away-lineup-${p.order}-${p.name}`} className="ss-lineup-row">
-                <div className="ss-lineup-name">
-                  {p.pos} / {p.name}
+              <div key={`away-lineup-${p.order}-${p.name}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e2e8f0', alignItems: 'center' }}>
+                <div style={{ fontWeight: 700, color: '#1e293b' }}>
+                  {p.pos} {p.name}
                 </div>
-                <div className="ss-lineup-meta">
-                  오늘타율 {p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  {p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}
                 </div>
               </div>
             ))}
@@ -609,14 +864,14 @@ export default function HanwhaDashboard(props) {
         </Card>
 
         <Card title="HOME 라인업">
-          <div className="ss-lineup-list">
+          <div style={{ fontSize: '12px', maxHeight: '200px', overflowY: 'auto' }}>
             {(homeState?.lineup || []).map((p) => (
-              <div key={`home-lineup-${p.order}-${p.name}`} className="ss-lineup-row">
-                <div className="ss-lineup-name">
-                  {p.pos} / {p.name}
+              <div key={`home-lineup-${p.order}-${p.name}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #e2e8f0', alignItems: 'center' }}>
+                <div style={{ fontWeight: 700, color: '#1e293b' }}>
+                  {p.pos} {p.name}
                 </div>
-                <div className="ss-lineup-meta">
-                  오늘타율 {p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  {p.today_avg != null ? Number(p.today_avg).toFixed(3) : "-"}
                 </div>
               </div>
             ))}

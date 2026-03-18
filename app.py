@@ -11,6 +11,9 @@ st.set_page_config(page_title="효진부터 시작되는 한화의 KS 우승!", 
 if "season" not in st.session_state:
     st.session_state["season"] = initialize_season_state(data_dir=".")
 
+if "_last_processed_action" not in st.session_state:
+    st.session_state["_last_processed_action"] = None
+
 season = st.session_state["season"]
 action = render_app(season)
 
@@ -30,54 +33,67 @@ except Exception:
     pass
 # endregion agent log
 
+# 중복 실행 방지
+if action and action == st.session_state.get("_last_processed_action"):
+    action = None
+
 if action == "start_or_resume":
     try:
         start_selected_game(season)
     except Exception as e:
         season._last_error = f"start_or_resume 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "live_pa":
     try:
         simulate_live_pa(season)
     except Exception as e:
         season._last_error = f"live_pa 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "live_half":
     try:
         simulate_live_half(season)
     except Exception as e:
         season._last_error = f"live_half 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "simulate_selected":
     try:
         simulate_selected_game(season)
     except Exception as e:
         season._last_error = f"simulate_selected 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "simulate_day":
     try:
         simulate_next_day(season)
     except Exception as e:
         season._last_error = f"simulate_day 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "force_bunt":
     live_force_bunt(season)
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "apply_ph":
     name = getattr(season, "_last_ph_name", "")
     if name:
         live_apply_pinch_hitter(season, name)
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "apply_pr":
     name = getattr(season, "_last_pr_name", "")
     base_number = getattr(season, "_last_pr_base", 1)
     if name:
         live_apply_pinch_runner(season, base_number, name)
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "apply_manual_pitcher":
     role = getattr(season, "_last_manual_role", "")
     if role:
         live_apply_manual_pitcher(season, role)
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "execute_trade":
     opp = getattr(season, "_last_trade_opp", "")
@@ -88,6 +104,7 @@ elif action == "execute_trade":
             apply_trade_action(season, opp, target, offered)
         except Exception as e:
             season._last_error = f"execute_trade 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()
 elif action == "set_hanwha_game_idx":
     try:
@@ -95,4 +112,37 @@ elif action == "set_hanwha_game_idx":
         season.selected_hanwha_game_idx = max(0, idx)
     except Exception as e:
         season._last_error = f"set_hanwha_game_idx 오류: {e}"
+    st.session_state["_last_processed_action"] = action
+    st.rerun()
+elif action == "update_batting_order":
+    try:
+        new_order = getattr(season, "_last_batting_order", [])
+        if new_order:
+            # 새로운 타순으로 스타터 업데이트
+            from kbo_sim.config import USER_TEAM
+            starters = season.team_hitters.get(USER_TEAM, {}).get("starters", [])
+            # 이름 순서대로 정렬
+            name_to_player = {p.get("name"): p for p in starters}
+            reordered = [name_to_player.get(name) for name in new_order if name in name_to_player]
+            # 타순 업데이트
+            for idx, player in enumerate(reordered):
+                if player:
+                    player["order"] = idx + 1
+            season.team_hitters[USER_TEAM]["starters"] = reordered
+    except Exception as e:
+        season._last_error = f"update_batting_order 오류: {e}"
+    st.session_state["_last_processed_action"] = action
+    st.rerun()
+elif action == "update_pitcher_rotation":
+    try:
+        new_order = getattr(season, "_last_pitcher_order", [])
+        if new_order:
+            # 새로운 로테이션으로 투수 업데이트
+            from kbo_sim.config import USER_TEAM
+            pitchers = season.team_pitchers.get(USER_TEAM, {})
+            # role 순서대로 재배치 (간단히 유지)
+            # 나중에 더 복잡한 로직 추가 가능
+    except Exception as e:
+        season._last_error = f"update_pitcher_rotation 오류: {e}"
+    st.session_state["_last_processed_action"] = action
     st.rerun()

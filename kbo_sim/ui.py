@@ -388,6 +388,14 @@ def _translate_component_action(season, comp_action):
         season._last_hanwha_game_idx = int(payload.get("idx", 0) or 0)
         return "set_hanwha_game_idx"
 
+    if action_type == "update_batting_order":
+        season._last_batting_order = payload.get("new_order", [])
+        return "update_batting_order"
+
+    if action_type == "update_pitcher_rotation":
+        season._last_pitcher_order = payload.get("new_order", [])
+        return "update_pitcher_rotation"
+
     if action_type in {
         "start_or_resume",
         "live_pa",
