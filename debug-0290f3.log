@@ -198,3 +198,15 @@
 {"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773762503.2815168}
 {"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773762504.337509}
 {"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773762504.3710072}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": null}, "timestamp": 1773817644.1500034}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "start_or_resume"}, "timestamp": 1773817739.8701866}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H1", "location": "season.py:start_selected_game", "message": "start_game_params", "data": {"date": "2025-03-22", "away": "\ud55c\ud654", "home": "KT"}, "timestamp": 1773817739.8715692}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "start_or_resume"}, "timestamp": 1773817739.9089942}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773817754.816446}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773817754.8809814}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773817764.3541312}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773817764.3905137}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773817768.272969}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_pa"}, "timestamp": 1773817768.3090684}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773817783.658119}
+{"sessionId": "0290f3", "runId": "pre-fix", "hypothesisId": "H2", "location": "app.py:action_dispatch", "message": "dispatch_action", "data": {"action": "live_half"}, "timestamp": 1773817783.7167199}
